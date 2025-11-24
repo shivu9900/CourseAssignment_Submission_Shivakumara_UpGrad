@@ -1,0 +1,53 @@
+---
+- name: Install and verify nginx on all web servers
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  vars:
+    welcome_content: "<h1>Welcome to Nginx</h1>"
+  tasks:
+    - name: Ensure apt cache is updated
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name: Install Nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+    - name: Ensure nginx service is enabled and started
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+    - name: Create custom index.html
+      ansible.builtin.copy:
+        dest: /var/www/html/index.html
+        content: "{{ welcome_content }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart nginx
+    - name: Wait for HTTP port 80 to become open
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 80
+        timeout: 30
+        state: started
+    - name: Verify that HTTP returns Welcome to Nginx
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}"
+        return_content: yes
+        status_code: 200
+      register: web_response
+      retries: 3
+      delay: 2
+      until: web_response.status == 200
+    - name: Assert expected content present
+      ansible.builtin.assert:
+        that:
+          - "'Welcome to Nginx' in web_response.content"
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
